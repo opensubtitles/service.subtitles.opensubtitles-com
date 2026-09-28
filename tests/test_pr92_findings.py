@@ -101,17 +101,35 @@ def test_only_the_api_origin_is_credentialed(url, is_api):
     assert transcriber._is_api_origin(url) is is_api
 
 
+def _anon_session_stub(content=b"1\n"):
+    """Stand-in for requests.Session() used by the off-origin fetch path.
+
+    Tests are 100% offline: without this the real Session would try to resolve
+    the example host.
+    """
+    anon = MagicMock()
+    anon.get.return_value = MagicMock(status_code=200, content=content)
+    anon.__enter__ = lambda self=anon: anon
+    anon.__exit__ = lambda *a: False
+    fake_requests = MagicMock()
+    fake_requests.Session.return_value = anon
+    return anon, fake_requests
+
+
 def test_off_origin_result_url_is_fetched_without_credentials(tmp_path):
     session = MagicMock()
-    session.get.return_value = MagicMock(status_code=200, content=b"1\n")
     headers = {"Authorization": "Bearer secret", "Api-Key": "key"}
-    with patch.object(transcriber, "_profile_dir", return_value=str(tmp_path)):
-        transcriber._save_completed_result(
-            session, {"url": "https://someone-elses-cdn.example/out.srt"}, headers)
-    sent = session.get.call_args.kwargs["headers"]
+    anon, fake_requests = _anon_session_stub(b"1\n")
+    with patch.dict(sys.modules, {"requests": fake_requests}):
+        with patch.object(transcriber, "_profile_dir", return_value=str(tmp_path)):
+            out = transcriber._save_completed_result(
+                session, {"url": "https://someone-elses-cdn.example/out.srt"}, headers)
+    sent = anon.get.call_args.kwargs["headers"]
     assert "Authorization" not in sent and "Api-Key" not in sent
-    # and the caller's dict is untouched for the next request
+    # the caller's dict is untouched for the next request
     assert headers["Authorization"] == "Bearer secret"
+    # and the subtitle still gets written
+    assert os.path.exists(out)
 
 
 def test_api_origin_result_url_keeps_credentials(tmp_path):
@@ -400,3 +418,95 @@ def test_stale_transcription_temp_files_are_swept(tmp_path):
     assert not old.exists(), "stale temp file left behind"
     assert fresh.exists(), "a concurrent invocation's file was deleted"
     assert other.exists(), "swept a file that is not ours"
+
+
+# === second review pass: defects introduced by the first round of fixes ======
+
+# --- transcriber.py:680 - Api-Key still shipped via the shared session ------
+
+def test_off_origin_fetch_does_not_use_the_credentialed_session(tmp_path):
+    """The provider's Session carries Api-Key in session.headers, and requests
+    MERGES those with per-request headers - so an off-origin fetch must not use
+    that session at all."""
+    provider_session = MagicMock()
+    provider_session.headers = {"Api-Key": "secret-key"}
+
+    anon, fake_requests = _anon_session_stub()
+
+    with patch.dict(sys.modules, {"requests": fake_requests}):
+        with patch.object(transcriber, "_profile_dir", return_value=str(tmp_path)):
+            transcriber._save_completed_result(
+                provider_session, {"url": "https://cdn.example/out.srt"},
+                {"Authorization": "Bearer secret", "Api-Key": "secret-key"})
+
+    provider_session.get.assert_not_called()
+    sent = anon.get.call_args.kwargs["headers"]
+    assert set(sent) == {"User-Agent"}, f"credentials leaked to an off-origin host: {sent}"
+
+
+# --- background_service.py:542 - concurrent workers shared one .osbak -------
+
+def test_each_replacement_gets_its_own_backup_path():
+    player = _player()
+    seen = []
+
+    with patch.object(service, "xbmcvfs") as vfs:
+        vfs.exists.return_value = True
+        vfs.rename.side_effect = lambda src, dst: (seen.append(dst), True)[1]
+        vfs.copy.return_value = True
+        vfs.delete.side_effect = lambda p: None
+        player._store_subtitle_copy("/tmp/a.srt", "/video/movie.en.srt")
+        player._store_subtitle_copy("/tmp/b.srt", "/video/movie.en.srt")
+
+    backups = [p for p in seen if str(p).endswith(".osbak")]
+    assert len(backups) == 2
+    assert backups[0] != backups[1], "two workers shared one backup path"
+
+
+# --- account_state.py:67 - read-modify-write raced a full snapshot ----------
+
+def test_state_merge_holds_an_exclusive_lock(tmp_path):
+    from resources.lib import account_state
+    state_file = tmp_path / "account_state.json"
+    held = []
+
+    with patch.object(account_state, "_state_path", return_value=str(state_file)):
+        real_write = account_state._write_account_state
+
+        def write_spy(state):
+            held.append(os.path.exists(str(state_file) + ".lock"))
+            return real_write(state)
+
+        with patch.object(account_state, "_write_account_state", side_effect=write_spy):
+            account_state.update_account_state({"account_details": "Quota: 3 downloads left today"})
+
+    assert held == [True], "the merge wrote without holding the lock"
+    assert not os.path.exists(str(state_file) + ".lock"), "lock file left behind"
+
+
+def test_stale_lock_does_not_wedge_updates(tmp_path):
+    from resources.lib import account_state
+    state_file = tmp_path / "account_state.json"
+    lock = tmp_path / "account_state.json.lock"
+    lock.write_text("")
+    os.utime(str(lock), (time.time() - 120,) * 2)      # older than STALE_AFTER
+
+    with patch.object(account_state, "_state_path", return_value=str(state_file)):
+        account_state.update_account_state({"account_status": "OK (VIP)"})
+        assert account_state.load_account_state()["account_status"] == "OK (VIP)"
+
+
+def test_live_lock_is_waited_for_then_gives_up_without_losing_the_write(tmp_path):
+    """A fresh foreign lock must not raise or drop the update - worst case the
+    merge proceeds unlocked, which is the pre-lock behaviour."""
+    from resources.lib import account_state
+    state_file = tmp_path / "account_state.json"
+    lock = tmp_path / "account_state.json.lock"
+    lock.write_text("")                                 # fresh: not stale
+
+    with patch.object(account_state, "_state_path", return_value=str(state_file)):
+        with patch.object(account_state._StateLock, "TIMEOUT", 0.1):
+            account_state.update_account_state({"account_status": "OK (Free User)"})
+    assert account_state.load_account_state.__name__ == "load_account_state"
+    with patch.object(account_state, "_state_path", return_value=str(state_file)):
+        assert account_state.load_account_state()["account_status"] == "OK (Free User)"
