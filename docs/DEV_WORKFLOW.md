@@ -4,27 +4,71 @@ This guide details the fastest setup for developing, testing, and debugging `ser
 
 ---
 
-## 1. Live Symlink Setup (One-Time)
+## 1. Instance Setup (One-Time) — and the symlink rule
 
-Subtitle add-ons in Kodi run on-demand (`extension point="xbmc.subtitle.module"`). Every subtitle search or download spawns a new Python execution. Symlinking the repository directly into Kodi means **every code edit is instantly active**.
+Subtitle add-ons in Kodi run on-demand (`extension point="xbmc.subtitle.module"`). Every subtitle search or download spawns a new Python execution, so a symlinked checkout means **every code edit is instantly active**. That convenience is also the single most destructive trap in this project.
 
-### macOS:
+> ### 🔴 HARD RULE — never symlink a checkout into a Kodi instance that can install this add-on
+>
+> Kodi's installer **deletes the existing add-on directory before moving the new files into place, and that delete follows symlinks**. If `addons/service.subtitles.opensubtitles-com` is a symlink to your git checkout, an install or auto-update of the same add-on id **recursively wipes the checkout**. The install then fails too, because the now-dangling symlink still occupies the path:
+>
+> ```
+> CAddonInstaller: installing 'service.subtitles.opensubtitles-com' version '1.0.90' from repository 'repository.xbmc.org'
+> error: Failed to move new addon files from '.../addons/temp/97118e9b-...' to '.../addons/service.subtitles.opensubtitles-com'
+> ```
+>
+> This destroyed the working copy on 2026-09-15, the day 1.0.90 landed in the official Kodi repository. Uncommitted work was unrecoverable.
+>
+> **Therefore:**
+> 1. A symlinked checkout is allowed **only** in a dedicated dev instance that has **no repository serving this add-on id** (`repository.opensubtitles-com` not installed, add-on never installed from a repository, auto-update off).
+> 2. Your normal Kodi profile — the one with the OpenSubtitles.com repository — gets a **copy**, never a link. Kodi may delete a copy freely; nothing of yours lives inside it.
+> 3. Run `scripts/kodi_dev.sh guard` before installing anything from a repository. It fails on exactly this configuration.
+> 4. If an install ever fails with *"Failed to move new addon files"*, check for a leftover symlink at that path first — that is the signature.
+
+Everything below is handled by `scripts/kodi_dev.sh`, which keeps the lines and instances separate by construction:
+
 ```bash
-ln -s "/data/www/opensubtitles.org/public_html/github/service.subtitles.opensubtitles-com" \
-      "$HOME/Library/Application Support/Kodi/addons/service.subtitles.opensubtitles-com"
+scripts/kodi_dev.sh setup 2x      # create the dev instance (and, for 1x, the worktree)
+scripts/kodi_dev.sh deploy 2x     # rsync a COPY of the checkout into that instance
+scripts/kodi_dev.sh run 2x        # launch Kodi against it (isolated HOME)
+scripts/kodi_dev.sh log 2x        # stream that instance's add-on log lines
+scripts/kodi_dev.sh guard         # fail on any unsafe symlink, anywhere
+scripts/kodi_dev.sh status        # what is wired where
 ```
 
-### Linux:
+Instant-edit symlinking is still available where it is safe — inside a dev instance with no repository installed:
+
 ```bash
-ln -s "/path/to/service.subtitles.opensubtitles-com" "$HOME/.kodi/addons/service.subtitles.opensubtitles-com"
+# macOS, dev instance only (never the default profile):
+ln -s "$(pwd)" "$HOME/.kodi-dev/2x/Library/Application Support/Kodi/addons/service.subtitles.opensubtitles-com"
 ```
 
-### Windows (cmd as Administrator):
-```cmd
-mklink /D "%APPDATA%\Kodi\addons\service.subtitles.opensubtitles-com" "C:\path\to\service.subtitles.opensubtitles-com"
+*(If you edit `resources/settings.xml` or `addon.xml`, close and reopen the Kodi settings dialog or restart Kodi.)*
+
+---
+
+## 1b. Developing 1.x and 2.x in parallel
+
+Both lines ship under the **same add-on id**, so they can never coexist in one Kodi profile. Kodi derives its entire profile from `HOME` (verified in xbmc `SettingsComponent.cpp`, `InitDirectoriesOSX`), which is what gives each line its own instance:
+
+| Line | Branch | Checkout | Kodi instance |
+|------|--------|----------|---------------|
+| 1.x maintenance (released, in the official Kodi repo) | `master` | `../service.subtitles.opensubtitles-com-1x` (git worktree) | `~/.kodi-dev/1x` |
+| 2.x development | `develop` | this checkout | `~/.kodi-dev/2x` |
+
+```bash
+scripts/kodi_dev.sh setup 1x      # creates the worktree on master + its instance
+scripts/kodi_dev.sh deploy 1x && scripts/kodi_dev.sh run 1x
 ```
 
-*(Note: If you edit `resources/settings.xml` or `addon.xml`, close and reopen the Kodi settings dialog or restart Kodi).*
+Rules for the parallel setup:
+
+- **One line per instance.** Never deploy both lines into the same `HOME`; the second install overwrites the first and you lose track of which code you are testing.
+- **No OpenSubtitles repository inside a dev instance.** Without it Kodi cannot auto-update over your work, which is what makes a symlink safe there.
+- **Leave add-on auto-update off** in dev instances (`Add-ons > My add-ons > OpenSubtitles.com > Auto-update: No`).
+- **Keep the default profile as the user-realistic one:** add-on installed from the repository, a plain copy, used to verify what real users actually receive.
+- **Never use a worktree path as an rsync `--delete` target**, and never point `deploy` at a checkout — deploy writes only into `~/.kodi-dev/<line>/…/addons/`.
+- Commit or push before any repo-install test. Committed work survived 2026-09-15; uncommitted work did not.
 
 ---
 

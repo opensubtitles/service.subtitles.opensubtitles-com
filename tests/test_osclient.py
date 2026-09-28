@@ -104,9 +104,11 @@ def test_nocache_toggle_adds_param_and_bypasses_local_cache():
 
     sent = http_get.call_args.kwargs.get("params") or http_get.call_args[0][1] if http_get.call_args else {}
     assert sent.get("nocache") == 1
-    # Local SEARCH cache bypassed (the only cache.get allowed is the JWT lookup)
+    # Local SEARCH cache bypassed (the only cache.get allowed is the JWT lookup,
+    # whose key carries a digest of the credentials that obtained the token)
     for call in provider.cache.get.call_args_list:
-        assert call.kwargs.get("key") == "user_token", f"search cache consulted: {call}"
+        assert str(call.kwargs.get("key")).startswith("user_token"), \
+            f"search cache consulted: {call}"
     provider.cache.set.assert_not_called()   # and nothing gets stored either
     addon.setSetting("test_nocache", "")     # don't leak into other tests
 

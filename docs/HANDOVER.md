@@ -106,7 +106,7 @@ python3 scripts/generate_repo.py
 ---
 
 ## 5. 🎯 Next Roadmap Items / Open Waits (2026-08-29)
-1. **Greptile v2 external review**: PR #92 (opensubtitles/…, branch v2-mirror-2) parked until the flex-credit reset (~Sept 1); re-tag `@greptileai review exhaustively`, then run the fix loop.
+1. **Greptile v2 external review**: PR #92 (opensubtitles-dev, branch `v2-mirror-2` → `greptile-empty-base`). Mirror refreshed 2026-09-26 to develop head 7e26a90 (53 files, +11,868) and re-triggered. **The handle is `@greptile-apps`, not `@greptileai`** — the bot stated that itself on #90; the three Aug 28/29 triggers used the wrong handle and produced no review at all. Awaiting the pass, then run the fix loop. To roll a new mirror: `build_release_zip.py` → unzip → copy the nested addon dir onto a `greptile-empty-base` clone → single commit → force-push.
 2. **API team**: accept AAC/M4A on /ai/transcribe (self-detecting client gate auto-activates the parked Android/afconvert/MF engines); optional: video containers ≤100 MB, decode-based ADTS duration.
 3. **xbmc/repo-scripts PR #2888** (1.0.90): awaiting human Team Kodi review. HARD RULE: no xbmc/* action without double approval.
 4. **subsync real auth**: service SPEC already defines Bearer/X-Api-Key keys - when minted, swap in .env (SUBSYNC_* keys) or settings.

@@ -40,13 +40,16 @@ bash scripts/stream_kodi_logs.sh
 
 ### Development in Kodi
 
-Symlink the repo into Kodi's addons directory once — the subtitle plugin side (`service.py` and everything it imports) spawns a fresh process per search, so those edits are instantly active (no reinstall). **The background service (`service_monitor.py`, a thin entry delegating to `resources/lib/background_service.py`) is one long-lived process started at Kodi launch — its edits require a Kodi restart** (or disabling and re-enabling the add-on) to take effect. macOS:
+Use `scripts/kodi_dev.sh` — it keeps the 1.x and 2.x lines in separate Kodi instances (isolated by `HOME`) and deploys copies, not links:
 
 ```bash
-ln -s "$(pwd)" "$HOME/Library/Application Support/Kodi/addons/service.subtitles.opensubtitles-com"
+scripts/kodi_dev.sh setup 2x && scripts/kodi_dev.sh deploy 2x && scripts/kodi_dev.sh run 2x
+scripts/kodi_dev.sh guard      # run before ANY install-from-repository test
 ```
 
-Changes to `resources/settings.xml` or `addon.xml` require reopening the Kodi settings dialog or restarting Kodi.
+The subtitle plugin side (`service.py` and everything it imports) spawns a fresh process per search, so those edits are active on the next search. **The background service (`service_monitor.py`, a thin entry delegating to `resources/lib/background_service.py`) is one long-lived process started at Kodi launch — its edits require a Kodi restart** (or disabling and re-enabling the add-on) to take effect. Changes to `resources/settings.xml` or `addon.xml` require reopening the Kodi settings dialog or restarting Kodi.
+
+**Never symlink this checkout into a Kodi instance that can install the add-on from a repository.** Kodi's installer deletes the existing add-on directory before unpacking and follows symlinks — on 2026-09-15 that wiped the working copy when 1.0.90 reached the official repo, and the install failed on the dangling symlink ("Failed to move new addon files"). Symlinks are allowed only in a dev instance with no OpenSubtitles repository installed and auto-update off. Full rule: `docs/DEV_WORKFLOW.md` §1 and §1b.
 
 ## Architecture
 
@@ -73,6 +76,8 @@ Kodi modules (`xbmc`, `xbmcgui`, `xbmcaddon`, `xbmcvfs`, `xbmcplugin`) exist onl
 - **Git remotes are named backwards from intuition** — `fork` = github.com/opensubtitles (the workbench; `develop` tracks `fork/develop`, routine pushes go here). `origin` = github.com/opensubtitles-dev (the MAIN repo). **Pushing to `origin` master is a LIVE action**: its CI rebuilds gh-pages and publishes to `kodi.opensubtitles.com`, where users update from. Only push `origin` master on Brano's explicit release instruction.
 
 - **Never invent REST API endpoints.** Every method in `resources/lib/osclient/provider.py` must exist in the official OpenAPI spec: `https://stoplight.io/api/v1/projects/opensubtitles/opensubtitles-api/nodes/open_api.json`. Endpoints designed ahead of the spec (e.g. `rate_subtitle`) must be marked PROPOSED in their docstring with the agreed contract and handle 404 as "not deployed yet".
+
+- **Never symlink a checkout into a Kodi profile that can install this add-on** — Kodi's installer deletes the target directory through the symlink and destroys the git tree. Dev instances only (`scripts/kodi_dev.sh`), and run `scripts/kodi_dev.sh guard` before any install test.
 
 - **No `print()`** — use `xbmc.log()` via the logging helper in `resources/lib/utilities.py`. `print()` breaks Kodi.
 - **No credential logging** — never log passwords, JWT bearer tokens, full login response bodies, or sensitive headers.
