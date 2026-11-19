@@ -96,6 +96,8 @@ ADVANCED_SETTINGS = """<advancedsettings>
 </advancedsettings>
 """
 
+BUILD_TIMEOUT_SECONDS = 900
+
 MOVIE_FILE = "The.Matrix.1999.1080p.BluRay.x264.mkv"
 EPISODE_FILE = "Breaking.Bad.S01E01.720p.BluRay.x264.mkv"
 BAD_USER, BAD_PASS = "e2e_no_such_user_zz91", "wrong-pass-e2e-7731"
@@ -544,6 +546,7 @@ def main():
     parser.add_argument("--keep", action="store_true",
                         help="leave the container running for inspection")
     args = parser.parse_args()
+    sys.stdout.reconfigure(line_buffering=True)  # live progress in CI logs
 
     release = RELEASES[args.release]
     image = f"os-kodi-e2e:{args.release}"
@@ -569,10 +572,18 @@ def main():
     stage_dir = tempfile.mkdtemp(prefix="kodi-e2e-")
     try:
         print(f"== build {image} ==")
-        build = ["docker", "build", "-q", "-t", image, "-f", os.path.join(E2E_DIR, release["dockerfile"])]
+        build = ["docker", "build", "--progress=plain", "-t", image,
+                 "-f", os.path.join(E2E_DIR, release["dockerfile"])]
         for key, value in release["build_args"].items():
             build += ["--build-arg", f"{key}={value}"]
-        run(build + [E2E_DIR])
+        # Output is streamed, not captured: a stalled package download must be
+        # visible in the CI log, and must not run into the job timeout.
+        try:
+            built = subprocess.run(build + [E2E_DIR], timeout=BUILD_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            raise E2EFailure(f"image build exceeded {BUILD_TIMEOUT_SECONDS}s")
+        if built.returncode != 0:
+            raise E2EFailure(f"image build failed ({built.returncode})")
 
         print("== stage add-ons ==")
         addons_dir, userdata, deps = stage(stage_dir, release["branch"])

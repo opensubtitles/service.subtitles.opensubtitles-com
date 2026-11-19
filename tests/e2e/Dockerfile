@@ -12,6 +12,16 @@
 ARG BASE=debian:trixie
 FROM ${BASE}
 ENV DEBIAN_FRONTEND=noninteractive
+# Fail fast instead of hanging: on GitHub's runners a stalled connection to
+# the Ubuntu archive once blocked this step until the job timed out.
+RUN printf '%s\n' 'Acquire::Retries "5";' 'Acquire::http::Timeout "30";' \
+      'Acquire::https::Timeout "30";' 'Acquire::ForceIPv4 "true";' \
+      > /etc/apt/apt.conf.d/80-e2e-network
+# Ubuntu bases only (no-op on Debian): archive.ubuntu.com is the round-robin
+# that stalled; this mirror serves the same archive, security pocket included.
+ARG UBUNTU_MIRROR=azure.archive.ubuntu.com
+RUN find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -exec \
+      sed -i -E "s#(archive|security)\.ubuntu\.com#${UBUNTU_MIRROR}#g" {} +
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       kodi xvfb libgl1-mesa-dri ffmpeg curl ca-certificates tzdata \
