@@ -420,7 +420,9 @@ def scenario_bad_login(kodi, ctx):
     try:
         heading, text = kodi.test_connection()
         status = kodi.get_settings("account_status")["account_status"]
-        check("wrong credentials: 401 explained in a dialog", "401" in text, text.splitlines()[0])
+        # 1.x appends the API's "401 ..." detail, 2.x shows the localized line only
+        check("wrong credentials: explained in a dialog",
+              "401" in text or "authenticate" in text.lower(), text.splitlines()[0])
         check("wrong credentials: account status says so", "401" in status, status)
     finally:
         kodi.set_settings({"OSuser": "", "OSpass": ""})
@@ -431,7 +433,9 @@ def scenario_real_login(kodi, ctx):
     kodi.set_settings({"OSuser": user, "OSpass": password})
     heading, text = kodi.test_connection()
     status = kodi.get_settings("account_status", "account_details")
-    check("real account: login succeeds", status["account_status"].startswith("OK"),
+    # 1.x: "OK (Free User)" / "OK (VIP)"; 2.x: "Free account" / "OK (VIP)"
+    check("real account: login succeeds",
+          status["account_status"].startswith("OK") or status["account_status"] == "Free account",
           f"{status['account_status']} | {status['account_details']}")
     check("real account: dialog shows the quota", "Downloads today" in text)
     # credentials stay set: the subtitle dialog scenario then downloads as this account
@@ -476,7 +480,8 @@ def scenario_subtitle_dialog(kodi, ctx):
         props = kodi.wait_until("the player to load the subtitle", subtitle_loaded, 30)
         current = props["currentsubtitle"]
         check("selected subtitle is active in the player",
-              props["subtitleenabled"] and current.get("language") == "eng",
+              # Kodi 22 reports the two-letter code, older releases the three-letter one
+              props["subtitleenabled"] and current.get("language") in ("en", "eng"),
               f"{current.get('name')} [{current.get('language')}]")
         saved = kodi.exec("sh", "-c", f"ls {MEDIA_DIR}/*.srt && head -c 4000 {MEDIA_DIR}/*.srt",
                           check=False)
