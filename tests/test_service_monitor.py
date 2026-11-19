@@ -204,3 +204,47 @@ def test_dialog_snapshot_revert_is_reconciled_from_state_file():
     assert addon.getSetting("account_status") == "OK (VIP)"
     assert addon.getSetting("account_logged_in") == "true"
     assert addon.getSetting("ai_credits") == "460"
+
+
+def _fingerprint_player(playing, generation_now=1):
+    player = OpenSubtitlesPlayer.__new__(OpenSubtitlesPlayer)
+    player.monitor = MagicMock()
+    player.monitor.waitForAbort.return_value = False
+    player.playback_generation = generation_now
+    player.isPlayingVideo = MagicMock(return_value=playing)
+    return player
+
+
+def test_fingerprint_contribution_never_asks_a_stopped_player_for_its_file():
+    """Playback shorter than the 15s settle: getPlayingFile() on a stopped
+    player makes Kodi log an error-level EXCEPTION on every such stop."""
+    player = _fingerprint_player(playing=False)
+    with patch("resources.lib.syncer.contribution_enabled", return_value=True), \
+         patch("resources.lib.syncer.engine_available", return_value=True), \
+         patch("resources.lib.syncer.contribute_fingerprint") as contribute, \
+         patch.object(service_monitor, "get_file_path") as get_path:
+        player._contribute_sync_fingerprint(1)
+    get_path.assert_not_called()
+    contribute.assert_not_called()
+
+
+def test_fingerprint_contribution_stands_down_for_a_newer_playback():
+    player = _fingerprint_player(playing=True, generation_now=2)
+    with patch("resources.lib.syncer.contribution_enabled", return_value=True), \
+         patch("resources.lib.syncer.engine_available", return_value=True), \
+         patch("resources.lib.syncer.contribute_fingerprint") as contribute, \
+         patch.object(service_monitor, "get_file_path") as get_path:
+        player._contribute_sync_fingerprint(1)
+    get_path.assert_not_called()
+    contribute.assert_not_called()
+
+
+def test_fingerprint_contribution_runs_while_the_same_video_plays():
+    player = _fingerprint_player(playing=True)
+    with patch("resources.lib.syncer.contribution_enabled", return_value=True), \
+         patch("resources.lib.syncer.engine_available", return_value=True), \
+         patch("resources.lib.syncer.contribute_fingerprint") as contribute, \
+         patch.object(service_monitor, "get_file_path", return_value="/media/film.mkv"):
+        player._contribute_sync_fingerprint(1)
+    contribute.assert_called_once()
+    assert contribute.call_args[0][0] == "/media/film.mkv"
