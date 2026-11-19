@@ -10,7 +10,9 @@ on:
 jobs:
   test:
     name: Pytest (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest moved to 26.04, for which setup-python has no
+    # Python 3.8 / 3.9 builds ("version '3.8' ... was not found").
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:

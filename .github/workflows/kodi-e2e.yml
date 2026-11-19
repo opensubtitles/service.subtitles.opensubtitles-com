@@ -1,0 +1,48 @@
+name: Real-Kodi End-to-End Test
+
+# Boots a real GUI Kodi under Xvfb (tests/e2e/Dockerfile*), installs exactly the
+# shipped add-on files and drives the add-on over JSON-RPC: plugin searches,
+# Kodi's own subtitle dialog (download -> subtitle active in the player),
+# cache, the settings buttons, wrong/real login, a network outage and a
+# DEBUG-log leak scan (driver: scripts/kodi_e2e_test.py). Complements the
+# import-only kodi-smoke.yml.
+#
+# It calls the LIVE OpenSubtitles.com API, so it is not wired to every push.
+# The weekly and manual runs download one subtitle per release; pull requests
+# that touch the suite itself run it search-only, spending no download quota.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 6 * * 1"   # weekly, Monday 06:30 UTC
+  pull_request:
+    paths:
+      - "tests/e2e/**"
+      - "scripts/kodi_e2e_test.py"
+      - ".github/workflows/kodi-e2e.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: Kodi ${{ matrix.kodi }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        # how each release is obtained: see RELEASES in the driver
+        kodi: [matrix, nexus, omega, piers]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7, SHA-pinned
+
+      - name: Run end-to-end suite in real Kodi
+        env:
+          # Optional: without them the suite runs anonymously and skips the
+          # real-login scenario. Never available to pull requests from forks.
+          OPENSUBTITLES_USER: ${{ secrets.OPENSUBTITLES_USER }}
+          OPENSUBTITLES_PASS: ${{ secrets.OPENSUBTITLES_PASS }}
+          E2E_ARGS: ${{ github.event_name == 'pull_request' && '--no-download' || '' }}
+        run: python3 scripts/kodi_e2e_test.py ${{ matrix.kodi }} $E2E_ARGS
