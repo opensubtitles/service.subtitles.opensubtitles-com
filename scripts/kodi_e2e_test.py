@@ -66,7 +66,7 @@ FLATPAK_HOME = "/root/.var/app/tv.kodi.Kodi/data"
 RELEASES = {
     "matrix": {"dockerfile": "Dockerfile", "build_args": {"BASE": "ubuntu:22.04"},
                "branch": "matrix", "home": DISTRO_HOME, "run_args": []},
-    "nexus": {"dockerfile": "Dockerfile", "build_args": {"BASE": "ubuntu:24.04"},
+    "nexus": {"dockerfile": "Dockerfile", "build_args": {"BASE": "debian:bookworm"},
               "branch": "nexus", "home": DISTRO_HOME, "run_args": []},
     "omega": {"dockerfile": "Dockerfile", "build_args": {"BASE": "debian:trixie"},
               "branch": "omega", "home": DISTRO_HOME, "run_args": []},
@@ -96,7 +96,7 @@ ADVANCED_SETTINGS = """<advancedsettings>
 </advancedsettings>
 """
 
-BUILD_TIMEOUT_SECONDS = 900
+BUILD_TIMEOUT_SECONDS = 1500
 
 MOVIE_FILE = "The.Matrix.1999.1080p.BluRay.x264.mkv"
 EPISODE_FILE = "Breaking.Bad.S01E01.720p.BluRay.x264.mkv"
