@@ -284,15 +284,24 @@ class OpenSubtitlesPlayer(xbmc.Player):
         # Sync-cache contribution (default ON, sync_fingerprint_contrib):
         # donate this release's speech fingerprint so any later sync of it is
         # instant for everyone. Local fast sources only - syncer measures.
-        threading.Thread(target=self._contribute_sync_fingerprint, daemon=True).start()
+        threading.Thread(target=self._contribute_sync_fingerprint, args=(generation,),
+                         daemon=True).start()
 
-    def _contribute_sync_fingerprint(self):
+    def _contribute_sync_fingerprint(self, generation=None):
+        if generation is None:
+            generation = self._current_generation()
         try:
             from resources.lib import syncer
             if not syncer.contribution_enabled() or not syncer.engine_available():
                 return
             # settle: let playback buffering finish before touching the disk
             if self.monitor and self.monitor.waitForAbort(15):
+                return
+            # The settle outlives short playbacks. Asking a stopped player for
+            # its file makes Kodi log "EXCEPTION: Kodi is not playing any file"
+            # at error level on every such stop, and a newer playback is not
+            # this thread's to fingerprint.
+            if generation != self._current_generation() or not self.isPlayingVideo():
                 return
             file_path = get_file_path()
             if not file_path:

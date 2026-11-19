@@ -264,7 +264,10 @@
                 </setting>
                 <setting id="sync_service_user" type="string" label="32281" parent="subtitle_sync_enabled">
                     <level>3</level>
-                    <default></default>
+                    <default/>
+                    <constraints>
+                        <allowempty>true</allowempty>
+                    </constraints>
                     <dependencies>
                         <dependency type="enable" setting="subtitle_sync_enabled">true</dependency>
                     </dependencies>
@@ -277,7 +280,10 @@
                 </setting>
                 <setting id="sync_service_pass" type="string" label="32282" parent="subtitle_sync_enabled">
                     <level>3</level>
-                    <default></default>
+                    <default/>
+                    <constraints>
+                        <allowempty>true</allowempty>
+                    </constraints>
                     <dependencies>
                         <dependency type="enable" setting="subtitle_sync_enabled">true</dependency>
                     </dependencies>

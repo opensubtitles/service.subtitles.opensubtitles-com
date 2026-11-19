@@ -181,3 +181,21 @@ def test_every_option_has_a_non_empty_value():
     for option in tree.getroot().findall(".//option"):
         assert option.text and option.text.strip(), \
             f"empty option value under label={option.attrib.get('label')!r} - crashes Kodi"
+
+
+def test_empty_string_defaults_declare_allowempty():
+    """Kodi logs 'error reading the default value of "<id>"' at every settings
+    load for a string setting whose default is empty unless the setting says
+    an empty value is allowed (seen in a real Kodi 21 log for the two sync
+    credentials)."""
+    root = ET.parse(SETTINGS_XML_PATH).getroot()
+    offenders = []
+    for setting in root.findall(".//setting"):
+        if setting.attrib.get("type") != "string":
+            continue
+        default = setting.find("default")
+        if default is None or (default.text or "").strip():
+            continue
+        if (setting.findtext("constraints/allowempty") or "").strip() != "true":
+            offenders.append(setting.attrib.get("id"))
+    assert not offenders, f"empty default without <allowempty>true</allowempty>: {offenders}"
