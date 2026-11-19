@@ -1,0 +1,31 @@
+# Real (GUI) Kodi under Xvfb, for the JSON-RPC end-to-end test
+# (scripts/kodi_e2e_test.sh). The matthuisman/kodi-headless images used by the
+# import smoke test have no window manager at all - xbmcgui.Window(10000)
+# raises "Window id does not exist" there, so the add-on's window-property
+# cache (and therefore every search) cannot run. Distro Kodi + a virtual
+# framebuffer gives a complete Kodi: home window, player, plugin directories.
+#
+# BASE picks the Kodi release via the distro's own package:
+#   ubuntu:22.04 -> Kodi 19 Matrix   ubuntu:24.04 -> Kodi 20 Nexus
+#   debian:trixie -> Kodi 21 Omega
+ARG BASE=debian:trixie
+FROM ${BASE}
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      kodi xvfb libgl1-mesa-dri ffmpeg curl ca-certificates tzdata \
+ && rm -rf /var/lib/apt/lists/*
+ENV HOME=/root
+# Web server + JSON-RPC over HTTP on, no auth: the driver talks to it through
+# `docker exec curl`, nothing is published to the host.
+RUN mkdir -p /root/.kodi/userdata /media/e2e \
+ && printf '%s\n' '<advancedsettings>' \
+      '  <services><webserver>true</webserver><webserverport>8080</webserverport>' \
+      '    <webserverauthentication>false</webserverauthentication>' \
+      '    <esenabled>false</esenabled><zeroconf>false</zeroconf></services>' \
+      '  <splash>false</splash>' \
+      '  <general><addonnotifications>false</addonnotifications></general>' \
+      '</advancedsettings>' > /root/.kodi/userdata/advancedsettings.xml
+# Not xvfb-run: as PID 1 it never receives Xvfb's SIGUSR1 "ready" signal and
+# hangs before starting Kodi. The lock is removed so `docker restart` works.
+CMD ["sh", "-c", "rm -f /tmp/.X99-lock; Xvfb :99 -screen 0 1280x720x24 -nolisten tcp & sleep 2; DISPLAY=:99 exec kodi --standalone"]
