@@ -1,0 +1,22 @@
+# Kodi pre-releases (currently Piers / Kodi 22) have no distro package yet;
+# Team Kodi's own Flatpak beta channel is the only maintained binary. Same
+# idea as ./Dockerfile - a real GUI Kodi under Xvfb - but Kodi runs inside the
+# Flatpak sandbox, so the container must be started with --privileged
+# (bubblewrap needs to create namespaces). The bwrap errors printed while
+# building are the same limitation hitting Flatpak's post-install triggers;
+# they do not affect the installed app.
+FROM debian:trixie
+ARG FLATPAK_BRANCH=beta
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      flatpak xvfb ffmpeg curl ca-certificates tzdata \
+ && rm -rf /var/lib/apt/lists/*
+RUN flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo \
+ && flatpak remote-add --if-not-exists flathub-beta https://flathub.org/beta-repo/flathub-beta.flatpakrepo \
+ && flatpak install -y --noninteractive flathub-beta tv.kodi.Kodi//${FLATPAK_BRANCH}
+ENV HOME=/root
+# Kodi's home inside the sandbox; the driver copies add-ons and userdata here.
+RUN mkdir -p /root/.var/app/tv.kodi.Kodi/data /media/e2e
+# The "Failed to connect to bus" warnings are harmless: no D-Bus in here.
+CMD ["sh", "-c", "rm -f /tmp/.X99-lock; Xvfb :99 -screen 0 1280x720x24 -nolisten tcp & sleep 2; DISPLAY=:99 exec flatpak run --socket=x11 --share=network --filesystem=/media/e2e tv.kodi.Kodi --standalone"]
