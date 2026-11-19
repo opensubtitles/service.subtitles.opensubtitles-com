@@ -535,6 +535,11 @@ def scenario_log_hygiene(kodi, ctx):
     blocks = [b for b in log.split("EXCEPTION Thrown")[1:] if ADDON_ID in b.split("-->End of")[0]]
     check("no Python exception from the add-on", not blocks,
           blocks[0].split("-->End of")[0].strip().splitlines()[-1].strip() if blocks else "")
+    # Only this add-on and the helper are hand-installed, so these are ours.
+    bad_settings = sorted(set(re.findall(r'error <CSetting\w*>: (.+)', log)))
+    check("no settings definition errors", not bad_settings, "; ".join(bad_settings)[:200])
+    check("stopped player is never asked for its file",
+          "EXCEPTION: Kodi is not playing any file" not in log)
     secrets = {"API key": ctx["api_key"], "wrong-login password": BAD_PASS}
     if ctx["credentials"]:
         secrets["account password"] = ctx["credentials"][1]
@@ -599,7 +604,19 @@ def main():
 
         print("== boot ==")
         run(["docker", "start", container])
-        kodi.wait_for_rpc()
+        try:
+            kodi.wait_for_rpc()
+        except E2EFailure as failure:
+            # Seen on a GitHub runner: the Flatpak Kodi never started and left an
+            # empty kodi.log. Show what the container said and boot once more
+            # before calling it a failure.
+            output = run(["docker", "logs", "--tail", "40", container], check=False)
+            print(f"  {failure}; container output:")
+            for line in (output.stdout + output.stderr).strip().splitlines():
+                print(f"    {line}")
+            print("  restarting the container once")
+            run(["docker", "restart", container])
+            kodi.wait_for_rpc()
         version = kodi.rpc("Application.GetProperties", {"properties": ["version"]})["version"]
         print(f"  Kodi {version['major']}.{version['minor']} ({version.get('tag', '')})")
         # Add-ons copied in by hand start disabled (Kodi 18+); enable like a user would.
