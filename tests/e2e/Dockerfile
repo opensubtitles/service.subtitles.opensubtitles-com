@@ -8,6 +8,7 @@
 # BASE picks the Kodi release via the distro's own package:
 #   ubuntu:22.04 -> Kodi 19 Matrix   ubuntu:24.04 -> Kodi 20 Nexus
 #   debian:trixie -> Kodi 21 Omega
+# Pre-releases without a distro package use ./Dockerfile.flatpak instead.
 ARG BASE=debian:trixie
 FROM ${BASE}
 ENV DEBIAN_FRONTEND=noninteractive
@@ -16,16 +17,9 @@ RUN apt-get update \
       kodi xvfb libgl1-mesa-dri ffmpeg curl ca-certificates tzdata \
  && rm -rf /var/lib/apt/lists/*
 ENV HOME=/root
-# Web server + JSON-RPC over HTTP on, no auth: the driver talks to it through
-# `docker exec curl`, nothing is published to the host.
-RUN mkdir -p /root/.kodi/userdata /media/e2e \
- && printf '%s\n' '<advancedsettings>' \
-      '  <services><webserver>true</webserver><webserverport>8080</webserverport>' \
-      '    <webserverauthentication>false</webserverauthentication>' \
-      '    <esenabled>false</esenabled><zeroconf>false</zeroconf></services>' \
-      '  <splash>false</splash>' \
-      '  <general><addonnotifications>false</addonnotifications></general>' \
-      '</advancedsettings>' > /root/.kodi/userdata/advancedsettings.xml
+# The driver copies add-ons and userdata (advancedsettings.xml enabling
+# JSON-RPC over HTTP) in here before the first start.
+RUN mkdir -p /root/.kodi /media/e2e
 # Not xvfb-run: as PID 1 it never receives Xvfb's SIGUSR1 "ready" signal and
 # hangs before starting Kodi. The lock is removed so `docker restart` works.
 CMD ["sh", "-c", "rm -f /tmp/.X99-lock; Xvfb :99 -screen 0 1280x720x24 -nolisten tcp & sleep 2; DISPLAY=:99 exec kodi --standalone"]
