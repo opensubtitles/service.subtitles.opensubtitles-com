@@ -604,7 +604,19 @@ def main():
 
         print("== boot ==")
         run(["docker", "start", container])
-        kodi.wait_for_rpc()
+        try:
+            kodi.wait_for_rpc()
+        except E2EFailure as failure:
+            # Seen on a GitHub runner: the Flatpak Kodi never started and left an
+            # empty kodi.log. Show what the container said and boot once more
+            # before calling it a failure.
+            output = run(["docker", "logs", "--tail", "40", container], check=False)
+            print(f"  {failure}; container output:")
+            for line in (output.stdout + output.stderr).strip().splitlines():
+                print(f"    {line}")
+            print("  restarting the container once")
+            run(["docker", "restart", container])
+            kodi.wait_for_rpc()
         version = kodi.rpc("Application.GetProperties", {"properties": ["version"]})["version"]
         print(f"  Kodi {version['major']}.{version['minor']} ({version.get('tag', '')})")
         # Add-ons copied in by hand start disabled (Kodi 18+); enable like a user would.
