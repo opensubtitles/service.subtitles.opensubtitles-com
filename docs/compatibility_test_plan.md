@@ -66,8 +66,11 @@ Tier-3 baseline run (2026-08-25, all PASS 11/11 modules):
   raises "Window id does not exist", so the window-property cache - and with
   it every search - cannot run there. That is why tier 3b uses a real Kodi
   under Xvfb instead of those images.
-- Tier 3b image sources: Matrix = ubuntu:22.04, Nexus = ubuntu:24.04, Omega =
-  debian:trixie (each distro's own `kodi` package). Piers has no distro
+- Tier 3b image sources: Matrix = ubuntu:22.04, Nexus = debian:bookworm, Omega
+  = debian:trixie (each distro's own `kodi` package). Debian is preferred -
+  Ubuntu's archive mirrors stalled and refused connections on GitHub runners,
+  so the Ubuntu build rotates through mirrors; Matrix cannot move because
+  Debian 11 (Kodi 19) is end-of-life. Piers has no distro
   package yet, so it runs Team Kodi's Flatpak beta in a `--privileged`
   container; move it to a distro base once one ships Kodi 22.
 - Files copied into the Flatpak Kodi's home must be root-owned: the sandbox
