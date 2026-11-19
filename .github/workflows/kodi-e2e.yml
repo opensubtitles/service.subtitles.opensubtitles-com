@@ -1,0 +1,39 @@
+name: Real-Kodi End-to-End Test
+
+# Boots a real GUI Kodi under Xvfb (tests/e2e/Dockerfile), installs exactly the
+# shipped add-on files, plays a synthetic video and drives the add-on over
+# JSON-RPC the way Kodi's subtitle dialog does: automatic search, manual search,
+# TV-episode search and one real subtitle download (driver:
+# scripts/kodi_e2e_test.py). Complements the import-only kodi-smoke.yml.
+#
+# It calls the LIVE OpenSubtitles.com API and spends download quota, so it is
+# not wired to every push: run it by hand or let the weekly schedule catch
+# API-side or Kodi-side drift.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 6 * * 1"   # weekly, Monday 06:30 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: Kodi ${{ matrix.kodi }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # distro-packaged Kodi per release, see RELEASES in the driver
+        kodi: [matrix, nexus, omega]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7, SHA-pinned
+
+      - name: Run end-to-end test in real Kodi
+        env:
+          # Optional: without them the add-on runs anonymously.
+          OPENSUBTITLES_USER: ${{ secrets.OPENSUBTITLES_USER }}
+          OPENSUBTITLES_PASS: ${{ secrets.OPENSUBTITLES_PASS }}
+        run: python3 scripts/kodi_e2e_test.py ${{ matrix.kodi }}
